@@ -9,5 +9,6 @@ app = create_app()
 app.app_context().push()
 manager = Manager(app)
 
+
 if __name__ == "__main__":
     manager.run()

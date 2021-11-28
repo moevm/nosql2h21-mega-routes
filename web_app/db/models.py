@@ -1,9 +1,29 @@
-from neomodel import StringProperty
-from neomodel import IntegerProperty
 from neomodel import FloatProperty
+from neomodel import IntegerProperty
+from neomodel import StringProperty, StructuredRel
 from neomodel import StructuredNode
 from neomodel import db
 
+class Way(StructuredRel):
+    id = IntegerProperty(required=True)
+    name = StringProperty(required=True)
+    distance = FloatProperty(required=True)
+
+    @classmethod
+    def properties(cls):
+        return ['id', 'name', 'distance', 'from', 'to']
+
+    @classmethod
+    def filter(cls, lat, lon):
+        query = f'''
+                    MATCH (n:WayNode)-[w]-()
+                    WHERE {lat[0]} <= n.lat and n.lat <= {lat[1]} and
+                          {lon[0]} <= n.lon and n.lon <= {lon[1]}
+                    RETURN DISTINCT w
+                '''
+
+        results, _ = db.cypher_query(query=query)
+        return [Way.inflate(res[0]) for res in results]
 
 class WayNode(StructuredNode):
     id = IntegerProperty(required=True)
@@ -11,12 +31,16 @@ class WayNode(StructuredNode):
     lon = FloatProperty(required=True)
 
     @classmethod
+    def properties(cls):
+        return ['id', 'lat', 'lon']
+
+    @classmethod
     def match(cls, lat=0.0, lon=0.0):
         query = f'''
             MATCH (n:{cls.__name__})
             WHERE {lat-0.002} <= n.lat and n.lat <= {lat+0.002} AND
 	              {lon-0.002} <= n.lon and n.lon <= {lon+0.002}
-            WITH n, distance(point({{longitude:n.lon,latitude:n.lat}}), point({{latitude: 59.8644123, longitude: 30.3490114}})) as dist
+            WITH n, distance(point({{longitude:n.lon,latitude:n.lat}}), point({{latitude: {lat}, longitude: {lon}}})) as dist
             ORDER BY dist ASC
             RETURN n limit 1
         '''
@@ -45,7 +69,7 @@ class WayNode(StructuredNode):
             }})
             YIELD nodeIds, costs
             RETURN gds.util.asNodes(nodeIds) AS nodes,
-                   reduce(acc = 0.0, cost in costs | acc + cost) AS distance
+                   costs
         '''
         results, _ = db.cypher_query(query=query)
         return [[WayNode.inflate(node) for node in path[0]] for path in results],\
@@ -64,6 +88,21 @@ class Building(StructuredNode):
     housenumber = StringProperty(required=True)
     lat = FloatProperty(required=True)
     lon = FloatProperty(required=True)
+
+    @classmethod
+    def properties(cls):
+        return ['id', 'street', 'housenumber', 'lat', 'lon']
+
+    @classmethod
+    def find_by_adress(cls, street, number):
+        query = f'''
+                    MATCH (n:Building)
+                    WHERE toLower(n.street)='{street}' AND n.housenumber='{number}'
+                    RETURN n LIMIT 1
+                '''
+
+        results, _ = db.cypher_query(query=query)
+        return Building.inflate(results[0][0])
 
     def __repr__(self):
         return str(self)
